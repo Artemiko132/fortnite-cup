@@ -18,8 +18,8 @@ export function useAuth() {
     user,
     loading,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin' || user?.email === 'admin@blink.new' || user?.email === import.meta.env.VITE_ADMIN_EMAIL,
-    login: () => blink.auth.login(),
-    logout: () => blink.auth.logout()
+    isAdmin: user?.role === 'admin' || user?.displayName === 'Artemiko132' || user?.email === import.meta.env.VITE_ADMIN_EMAIL,
+    signIn: (email: string, pass: string) => blink.auth.signInWithEmail(email, pass),
+    logout: () => blink.auth.signOut()
   }
 }

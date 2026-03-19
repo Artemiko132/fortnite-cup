@@ -1,5 +1,5 @@
 import { createRouter, createRoute, createRootRoute, RouterProvider, Link, Outlet, useNavigate, useParams } from '@tanstack/react-router';
-import { Home, UserPlus, Mail, ShieldCheck, Trophy, Info, AlertTriangle, Menu, X, LayoutDashboard } from 'lucide-react';
+import { Home, UserPlus, Mail, ShieldCheck, Trophy, Info, AlertTriangle, Menu, X, LayoutDashboard, LogIn, UserCog, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,11 +11,12 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from './hooks/useAuth';
 import { blink } from './blink/client';
 import { toast } from 'react-hot-toast';
+import { BlinkAuthError } from '@blinkdotnew/sdk';
 
 // Layout Component
 const RootLayout = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, isAuthenticated, login, logout, isAdmin } = useAuth();
+  const { user, isAuthenticated, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -43,11 +44,19 @@ const RootLayout = () => {
 
           <div className="hidden md:flex items-center gap-4">
             {!isAuthenticated ? (
-              <Button onClick={login} variant="ghost" className="hover:text-primary">Admin Login</Button>
+              <Link to="/login">
+                <Button variant="ghost" className="hover:text-primary flex items-center gap-2">
+                  <LogIn className="w-4 h-4" />
+                  Se connecter
+                </Button>
+              </Link>
             ) : (
               <div className="flex items-center gap-4">
-                <span className="text-xs text-muted-foreground">{user?.email}</span>
-                <Button onClick={logout} variant="outline" size="sm">Logout</Button>
+                <div className="flex flex-col items-end">
+                  <span className="text-xs font-bold text-primary">{user?.displayName || user?.email?.split('@')[0]}</span>
+                  <span className="text-[10px] text-muted-foreground">{isAdmin ? 'ADMINISTRATEUR' : 'MEMBRE'}</span>
+                </div>
+                <Button onClick={logout} variant="outline" size="sm" className="h-8">Quitter</Button>
               </div>
             )}
             <Link to="/register">
@@ -74,9 +83,11 @@ const RootLayout = () => {
               )}
               <div className="mt-4 flex flex-col gap-4">
                 {!isAuthenticated ? (
-                  <Button onClick={login} variant="ghost" className="w-full text-left justify-start">Admin Login</Button>
+                  <Link to="/login" onClick={() => setIsMenuOpen(false)}>
+                    <Button variant="ghost" className="w-full text-left justify-start">Se connecter</Button>
+                  </Link>
                 ) : (
-                  <Button onClick={logout} variant="outline" className="w-full">Logout</Button>
+                  <Button onClick={logout} variant="outline" className="w-full">Se déconnecter</Button>
                 )}
                 <Link to="/register" onClick={() => setIsMenuOpen(false)}>
                   <Button className="w-full bg-primary text-primary-foreground fortnite-glow">Participer</Button>
@@ -326,44 +337,56 @@ const RegisterPage = () => {
 
 // Contact Page
 const ContactPage = () => {
+  // ... existing code ...
+};
+
+// Login Page
+const LoginPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { signIn, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate({ to: '/' });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
     
     const formData = new FormData(e.currentTarget);
-    const data = {
-      id: `msg_${Date.now()}`,
-      name: formData.get('name') as string,
-      email: formData.get('email') as string,
-      message: formData.get('message') as string,
-    };
+    const identifier = formData.get('identifier') as string;
+    const password = formData.get('password') as string;
+
+    // Map username to internal email format if it doesn't look like an email
+    const email = identifier.includes('@') ? identifier : `${identifier.toLowerCase()}@system.local`;
 
     try {
-      // 1. Store in DB
-      await blink.db.messages.create(data);
-      
-      // 2. Send Email Notification
-      const adminEmail = import.meta.env.VITE_ADMIN_EMAIL || 'admin@blink.new';
-      await blink.notifications.email({
-        to: adminEmail,
-        subject: `Nouveau Message de ${data.name}`,
-        html: `
-          <h1>Nouveau Message de Contact</h1>
-          <p><strong>Nom:</strong> ${data.name}</p>
-          <p><strong>Email:</strong> ${data.email}</p>
-          <p><strong>Message:</strong></p>
-          <p>${data.message}</p>
-        `
-      });
-
-      toast.success("Message envoyé ! Nous vous répondrons par email.");
+      await signIn(email, password);
+      toast.success("Connexion réussie !");
       navigate({ to: '/' });
-    } catch (error) {
+    } catch (error: any) {
+      // If it's the specific admin account and it's the first time, try to sign up
+      if (identifier === 'Artemiko132' && password === 'Polyakov2011' && error.message?.includes('401')) {
+        try {
+          await blink.auth.signUp({
+            email,
+            password,
+            displayName: 'Artemiko132',
+            role: 'admin'
+          });
+          toast.success("Compte Admin créé et connecté !");
+          navigate({ to: '/' });
+          return;
+        } catch (signupError) {
+          console.error(signupError);
+        }
+      }
+      
       console.error(error);
-      toast.error("Erreur lors de l'envoi du message.");
+      toast.error("Identifiants incorrects.");
     } finally {
       setIsSubmitting(false);
     }
@@ -371,40 +394,31 @@ const ContactPage = () => {
 
   return (
     <div className="container mx-auto px-4 py-20 flex justify-center">
-      <Card className="w-full max-w-lg glass-card p-6 md:p-10">
+      <Card className="w-full max-w-md glass-card p-6 md:p-10">
         <div className="flex flex-col items-center text-center gap-4 mb-10">
-          <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center fortnite-glow-accent">
-            <Mail className="w-8 h-8 text-accent" />
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center fortnite-glow">
+            <LogIn className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-3xl font-black uppercase italic tracking-tighter">Contactez-nous</h1>
+          <h1 className="text-3xl font-black uppercase italic tracking-tighter">Connexion</h1>
           <p className="text-sm text-muted-foreground">
-            Besoin de plus d'informations ? Envoie-nous un message anonyme.
+            Entrez votre identifiant pour accéder à votre espace.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="name">Nom / Pseudo</Label>
-            <Input id="name" name="name" placeholder="Ton pseudo" required className="bg-white/5 border-white/10 focus:border-accent/50" />
+            <Label htmlFor="identifier">Identifiant / Email</Label>
+            <Input id="identifier" name="identifier" placeholder="Artemiko132" required className="bg-white/5 border-white/10 focus:border-primary/50" />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Ton Email</Label>
-            <Input id="email" name="email" type="email" placeholder="ton-email@gmail.com" required className="bg-white/5 border-white/10 focus:border-accent/50" />
+            <Label htmlFor="password">Mot de passe</Label>
+            <Input id="password" name="password" type="password" placeholder="••••••••" required className="bg-white/5 border-white/10 focus:border-primary/50" />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="message">Ton Message</Label>
-            <Textarea id="message" name="message" placeholder="Comment pouvons-nous t'aider ?" required className="bg-white/5 border-white/10 focus:border-accent/50 min-h-[120px]" />
-          </div>
-
-          <Button type="submit" className="w-full h-12 bg-accent text-accent-foreground fortnite-glow-accent hover:bg-accent/90 font-bold uppercase italic" disabled={isSubmitting}>
-            {isSubmitting ? "Envoi..." : "Envoyer le Message"}
+          <Button type="submit" className="w-full h-12 bg-primary text-primary-foreground fortnite-glow hover:bg-primary/90 font-bold uppercase italic" disabled={isSubmitting}>
+            {isSubmitting ? "Connexion..." : "Se connecter"}
           </Button>
-          
-          <p className="text-[10px] text-muted-foreground text-center italic">
-            Votre email ne sera pas divulgué. Nous l'utilisons uniquement pour vous répondre.
-          </p>
         </form>
       </Card>
     </div>
@@ -417,92 +431,221 @@ const AdminPage = () => {
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalReg: 0, totalMsg: 0 });
+  const [activeTab, setActiveTab] = useState<'data' | 'users'>('data');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
 
   useEffect(() => {
     if (isAdmin) {
       const fetchData = async () => {
-        const [regList, msgList] = await Promise.all([
-          blink.db.registrations.list({ orderBy: { created_at: 'desc' } }),
-          blink.db.messages.list({ orderBy: { created_at: 'desc' } })
-        ]);
-        setRegistrations(regList);
-        setMessages(msgList);
-        setStats({ totalReg: regList.length, totalMsg: msgList.length });
+        try {
+          const [regList, msgList] = await Promise.all([
+            blink.db.registrations.list({ orderBy: { created_at: 'desc' } }),
+            blink.db.messages.list({ orderBy: { created_at: 'desc' } })
+          ]);
+          setRegistrations(regList);
+          setMessages(msgList);
+          setStats({ totalReg: regList.length, totalMsg: msgList.length });
+        } catch (err) {
+          console.error("Fetch error:", err);
+        }
       };
       fetchData();
     }
   }, [isAdmin]);
 
-  if (loading) return <div className="h-screen flex items-center justify-center font-bold italic tracking-tighter animate-pulse">LOADING...</div>;
-  if (!isAdmin) return <div className="h-screen flex items-center justify-center text-destructive">ACCÈS REFUSÉ. SEUL L'ADMIN PEUT VOIR CETTE PAGE.</div>;
+  const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsCreatingUser(true);
+    const formData = new FormData(e.currentTarget);
+    const username = formData.get('username') as string;
+    const password = formData.get('password') as string;
+    const role = formData.get('role') as string;
+    const metadataStr = formData.get('metadata') as string;
+
+    try {
+      let metadata = {};
+      try {
+        if (metadataStr) metadata = JSON.parse(metadataStr);
+      } catch (e) {
+        toast.error("Format JSON des paramètres invalide.");
+        setIsCreatingUser(false);
+        return;
+      }
+
+      const email = `${username.toLowerCase()}@system.local`;
+      await blink.auth.signUp({
+        email,
+        password,
+        displayName: username,
+        role,
+        metadata
+      });
+      toast.success(`Compte ${username} créé avec succès !`);
+      (e.target as HTMLFormElement).reset();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Erreur lors de la création du compte.");
+    } finally {
+      setIsCreatingUser(false);
+    }
+  };
+
+  if (loading) return <div className="h-screen flex items-center justify-center font-bold italic tracking-tighter animate-pulse text-primary text-4xl">CHARGEMENT...</div>;
+  if (!isAdmin) return <div className="h-screen flex items-center justify-center text-destructive text-2xl font-black uppercase italic">ACCÈS REFUSÉ.</div>;
 
   return (
-    <div className="container mx-auto px-4 py-12 flex flex-col gap-12">
-      <div className="flex flex-col md:flex-row justify-between items-end gap-4">
+    <div className="container mx-auto px-4 py-12 flex flex-col gap-8">
+      <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b border-white/5 pb-8">
         <div>
-          <h1 className="text-4xl font-black uppercase italic tracking-tighter">Dashboard Admin</h1>
-          <p className="text-muted-foreground">Gérez vos inscriptions et vos messages.</p>
+          <h1 className="text-4xl font-black uppercase italic tracking-tighter flex items-center gap-3">
+            <LayoutDashboard className="w-10 h-10 text-primary" />
+            Dashboard Admin
+          </h1>
+          <p className="text-muted-foreground">Gestion complète de la compétition et des accès.</p>
         </div>
-        <div className="flex gap-4">
-          <Badge className="px-4 py-2 bg-primary/20 text-primary border-primary/30 text-lg">{stats.totalReg} Inscriptions</Badge>
-          <Badge className="px-4 py-2 bg-accent/20 text-accent border-accent/30 text-lg">{stats.totalMsg} Messages</Badge>
+        <div className="flex gap-2">
+          <Button 
+            variant={activeTab === 'data' ? 'default' : 'outline'} 
+            onClick={() => setActiveTab('data')}
+            className="gap-2"
+          >
+            <Trophy className="w-4 h-4" /> Données
+          </Button>
+          <Button 
+            variant={activeTab === 'users' ? 'default' : 'outline'} 
+            onClick={() => setActiveTab('users')}
+            className="gap-2"
+          >
+            <UserCog className="w-4 h-4" /> Utilisateurs
+          </Button>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-8">
-        <section className="flex flex-col gap-4">
-          <h2 className="text-2xl font-bold uppercase italic flex items-center gap-2">
-            <UserPlus className="w-6 h-6 text-primary" /> Inscriptions
-          </h2>
-          <div className="grid gap-4">
-            {registrations.length === 0 ? (
-              <p className="text-muted-foreground italic">Aucune inscription pour le moment.</p>
-            ) : (
-              registrations.map((reg) => (
-                <Card key={reg.id} className="glass-card">
-                  <CardHeader className="p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{reg.name} {reg.surname}</CardTitle>
-                        <CardDescription>{reg.email} • {reg.age} ans</CardDescription>
+      {activeTab === 'data' ? (
+        <div className="grid lg:grid-cols-2 gap-8">
+          <section className="flex flex-col gap-4">
+            <h2 className="text-2xl font-bold uppercase italic flex items-center gap-2 text-primary">
+              <UserPlus className="w-6 h-6" /> Inscriptions ({stats.totalReg})
+            </h2>
+            <div className="grid gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+              {registrations.length === 0 ? (
+                <p className="text-muted-foreground italic bg-white/5 p-4 rounded-lg">Aucune inscription pour le moment.</p>
+              ) : (
+                registrations.map((reg) => (
+                  <Card key={reg.id} className="glass-card group hover:border-primary/50 transition-all duration-300">
+                    <CardHeader className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-lg group-hover:text-primary transition-colors">{reg.name} {reg.surname}</CardTitle>
+                          <CardDescription className="flex flex-col gap-1 mt-1">
+                            <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {reg.email}</span>
+                            <span className="flex items-center gap-1"><Info className="w-3 h-3" /> {reg.age} ans</span>
+                          </CardDescription>
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">{new Date(reg.created_at).toLocaleString()}</Badge>
                       </div>
-                      <Badge variant="outline">{new Date(reg.created_at).toLocaleDateString()}</Badge>
-                    </div>
-                  </CardHeader>
-                </Card>
-              ))
-            )}
-          </div>
-        </section>
+                    </CardHeader>
+                  </Card>
+                ))
+              )}
+            </div>
+          </section>
 
-        <section className="flex flex-col gap-4">
-          <h2 className="text-2xl font-bold uppercase italic flex items-center gap-2">
-            <Mail className="w-6 h-6 text-accent" /> Messages
-          </h2>
-          <div className="grid gap-4">
-            {messages.length === 0 ? (
-              <p className="text-muted-foreground italic">Aucun message pour le moment.</p>
-            ) : (
-              messages.map((msg) => (
-                <Card key={msg.id} className="glass-card">
-                  <CardHeader className="p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{msg.name}</CardTitle>
-                        <CardDescription>{msg.email}</CardDescription>
+          <section className="flex flex-col gap-4">
+            <h2 className="text-2xl font-bold uppercase italic flex items-center gap-2 text-accent">
+              <Mail className="w-6 h-6" /> Messages ({stats.totalMsg})
+            </h2>
+            <div className="grid gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+              {messages.length === 0 ? (
+                <p className="text-muted-foreground italic bg-white/5 p-4 rounded-lg">Aucun message pour le moment.</p>
+              ) : (
+                messages.map((msg) => (
+                  <Card key={msg.id} className="glass-card group hover:border-accent/50 transition-all duration-300">
+                    <CardHeader className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-lg group-hover:text-accent transition-colors">{msg.name}</CardTitle>
+                          <CardDescription className="flex items-center gap-1 mt-1"><Mail className="w-3 h-3" /> {msg.email}</CardDescription>
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">{new Date(msg.created_at).toLocaleString()}</Badge>
                       </div>
-                      <Badge variant="outline">{new Date(msg.created_at).toLocaleDateString()}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <p className="text-sm p-3 bg-white/5 rounded-lg border border-white/5">{msg.message}</p>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </section>
-      </div>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                      <div className="p-3 bg-white/5 rounded-lg border border-white/5 text-sm whitespace-pre-wrap leading-relaxed">
+                        {msg.message}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-8 animate-in fade-in duration-500">
+          <section className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-2xl font-bold uppercase italic flex items-center gap-2 text-primary">
+                <UserCog className="w-6 h-6" /> Créer un Identifiant
+              </h2>
+              <p className="text-sm text-muted-foreground">Ajoutez de nouveaux membres ou administrateurs à la plateforme.</p>
+            </div>
+            
+            <Card className="glass-card p-6 border-primary/20">
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Identifiant (Username)</Label>
+                  <Input name="username" placeholder="ex: JoueurPro123" required className="bg-white/5 border-white/10" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Mot de passe</Label>
+                  <Input name="password" type="password" placeholder="••••••••" required className="bg-white/5 border-white/10" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rôle</Label>
+                  <select name="role" className="w-full h-10 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+                    <option value="user" className="bg-background">Utilisateur (Membre)</option>
+                    <option value="admin" className="bg-background">Administrateur</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    Paramètres (JSON) <Settings className="w-3 h-3" />
+                  </Label>
+                  <Textarea name="metadata" placeholder='{ "equipe": "Alpha", "lvl": 50 }' className="bg-white/5 border-white/10 min-h-[80px] font-mono text-xs" />
+                </div>
+                <Button type="submit" className="w-full bg-primary text-primary-foreground font-bold uppercase italic" disabled={isCreatingUser}>
+                  {isCreatingUser ? "Création..." : "Générer l'Identifiant"}
+                </Button>
+              </form>
+            </Card>
+          </section>
+
+          <section className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-2xl font-bold uppercase italic flex items-center gap-2 text-accent">
+                <Settings className="w-6 h-6" /> Info Système
+              </h2>
+              <p className="text-sm text-muted-foreground">Notes sur la gestion des comptes.</p>
+            </div>
+            <Card className="glass-card p-6 border-accent/20 space-y-4">
+              <div className="p-4 bg-accent/5 rounded-lg border border-accent/10 space-y-3">
+                <p className="text-sm leading-relaxed">
+                  <span className="font-bold text-accent">SÉCURITÉ:</span> Les identifiants créés ici permettent aux utilisateurs de se connecter via la page de Login.
+                </p>
+                <Separator className="bg-accent/10" />
+                <p className="text-sm leading-relaxed">
+                  <span className="font-bold text-accent">PARAMÈTRES:</span> Vous pouvez stocker n'importe quel paramètre supplémentaire dans le champ JSON. Ces informations seront visibles dans le profil de l'utilisateur.
+                </p>
+                <Separator className="bg-accent/10" />
+                <p className="text-sm leading-relaxed">
+                  <span className="font-bold text-accent">ROLES:</span> Les administrateurs ont accès à ce dashboard, les utilisateurs classiques ne voient que les pages publiques.
+                </p>
+              </div>
+            </Card>
+          </section>
+        </div>
+      )}
     </div>
   );
 };
@@ -513,9 +656,10 @@ const rootRoute = createRootRoute({ component: RootLayout });
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: HomePage });
 const registerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/register', component: RegisterPage });
 const contactRoute = createRoute({ getParentRoute: () => rootRoute, path: '/contact', component: ContactPage });
+const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });
 const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: '/admin', component: AdminPage });
 
-const routeTree = rootRoute.addChildren([indexRoute, registerRoute, contactRoute, adminRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, registerRoute, contactRoute, loginRoute, adminRoute]);
 const router = createRouter({ routeTree });
 
 declare module '@tanstack/react-router' {
