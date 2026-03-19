@@ -43,18 +43,11 @@ const RootLayout = () => {
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
-            {!isAuthenticated ? (
-              <Link to="/login">
-                <Button variant="ghost" className="hover:text-primary flex items-center gap-2">
-                  <LogIn className="w-4 h-4" />
-                  Se connecter
-                </Button>
-              </Link>
-            ) : (
+            {isAuthenticated && (
               <div className="flex items-center gap-4">
                 <div className="flex flex-col items-end">
                   <span className="text-xs font-bold text-primary">{user?.displayName || user?.email?.split('@')[0]}</span>
-                  <span className="text-[10px] text-muted-foreground">{isAdmin ? 'ADMINISTRATEUR' : 'MEMBRE'}</span>
+                  {isAdmin && <span className="text-[10px] text-muted-foreground">ADMINISTRATEUR</span>}
                 </div>
                 <Button onClick={logout} variant="outline" size="sm" className="h-8">Quitter</Button>
               </div>
@@ -82,11 +75,7 @@ const RootLayout = () => {
                 <Link to="/admin" onClick={() => setIsMenuOpen(false)} className="text-lg font-medium border-b border-white/5 pb-2 text-accent">Admin Dashboard</Link>
               )}
               <div className="mt-4 flex flex-col gap-4">
-                {!isAuthenticated ? (
-                  <Link to="/login" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="ghost" className="w-full text-left justify-start">Se connecter</Button>
-                  </Link>
-                ) : (
+                {isAuthenticated && (
                   <Button onClick={logout} variant="outline" className="w-full">Se déconnecter</Button>
                 )}
                 <Link to="/register" onClick={() => setIsMenuOpen(false)}>
